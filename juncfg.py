@@ -8,16 +8,19 @@ from jnpr.junos.op.ethport import EthPortTable
 from jnpr.junos.op.vlan import VlanTable
 
 
-devices_list = ('sw23.msk6.ip', 'sw22.msk6.ip', 'sw16.msk4.ip', '192.168.1.17')
+devices_list = ('sw23.msk6.ip', 'sw22.msk6.ip', 'sw16.msk4.ip', '192.168.1.14')
 
 
-def get_vlan_dict(dev):
+def get_vlan_dict(dev, strict=0):
     globals().update(loadyaml('templates/vlans.yaml'))
     vlans = VlanTable(dev)
     vlans.get()
     vlans_keys = vlans.keys()
     vlans_values = vlans.values()
-    return {k: v for k, v in zip(vlans_keys, vlans_values) if k == parser.parse_args().vlan[0]}
+    if strict == 0:
+        return {k: v for k, v in zip(vlans_keys, vlans_values)}
+    else:
+        return {k: v for k, v in zip(vlans_keys, vlans_values) if k == parser.parse_args().vlan[0] }
 
 
 def get_uplinks_dict(dev):
@@ -56,7 +59,7 @@ def add_vlan_and_port(dev):
 
 def del_vlan(dev):
     vlan_port_list = []
-    vlan_id_dict = get_vlan_dict(dev)
+    vlan_id_dict = get_vlan_dict(dev,strict=1)
     for k, v in vlan_id_dict.items():
         if v[2][1] == 'l2ng-l2rtb-vlan-member-interface':
             break
@@ -74,12 +77,20 @@ def del_vlan(dev):
 
 
 def set_port_default(dev):
+    vlan_numbers_list = []
+    vlan_id_dict = get_vlan_dict(dev)
+    for k, v in vlan_id_dict.items():
+        if v[2][1] == 'l2ng-l2rtb-vlan-member-interface':
+            continue
+        else:
+            vlan_numbers_list.append(k)
     config_vars = {
-        'interfaces': ['xe-0/0/{0}'.format(parser.parse_args().port[0])]
+        'interface': 'xe-0/0/{0}'.format(parser.parse_args().port[0]),
+        'units': vlan_numbers_list
     }
     config_file = "templates/junos-config-port-default.conf"
     cu = Config(dev, mode='private')
-    cu.load(template_path=config_file, template_vars=config_vars, replace=True)
+    cu.load(template_path=config_file, template_vars=config_vars, replace=True, format='set', ignore_warning=True)
     cu.pdiff()
     apply_config(dev, cu)
 
