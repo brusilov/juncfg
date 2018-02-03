@@ -71,7 +71,7 @@ def del_vlan(dev):
     }
     config_file = "templates/junos-config-delete-vlans.conf"
     cu = Config(dev, mode='private')
-    cu.load(template_path=config_file, template_vars=config_vars, replace=True, format='set', ignore_warning=True)
+    cu.load(template_path=config_file, template_vars=config_vars, replace=True, format='set')
     cu.pdiff()
     apply_config(dev, cu)
 
@@ -83,14 +83,17 @@ def set_port_default(dev):
         if v[2][1] == 'l2ng-l2rtb-vlan-member-interface':
             continue
         else:
-            vlan_numbers_list.append(k)
+            for i in v[2][1]:
+                if i.rstrip('*').startswith('xe-0/0/{0}'.format(parser.parse_args().port[0])):
+                    print(k)
+                    vlan_numbers_list.append(k)
     config_vars = {
         'interface': 'xe-0/0/{0}'.format(parser.parse_args().port[0]),
         'units': vlan_numbers_list
     }
     config_file = "templates/junos-config-port-default.conf"
     cu = Config(dev, mode='private')
-    cu.load(template_path=config_file, template_vars=config_vars, replace=True, format='set', ignore_warning=True)
+    cu.load(template_path=config_file, template_vars=config_vars, replace=True, format='set')
     cu.pdiff()
     apply_config(dev, cu)
 
@@ -194,6 +197,8 @@ interfaces {
         }
     } {% endfor %}
 }
+
+, ignore_warning=True
 
 config_vars = {
           'interfaces' : [
