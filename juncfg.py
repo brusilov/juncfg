@@ -1,6 +1,7 @@
 import sys
 import argparse
 import getpass
+import netaddr
 from lxml import etree
 from jnpr.junos.factory import loadyaml
 from jnpr.junos import Device
@@ -68,9 +69,11 @@ def get_policer(dev):
                 else:
                     create_policer_config(parser.parse_args().policer[0])
 
+    ip = netaddr.IPNetwork(parser.parse_args().address[0])
+
     config_vars = {
         'vlan_id': parser.parse_args().vlan[0],
-        'ip_address': parser.parse_args().address[0],
+        'ip_address': '{}/{}'.format(ip.ip.__str__() if ip.ip.__str__() != ip.network.__str__() else ip[1].__str__(),ip.prefixlen.__str__()),
         'policer_precence': POLICER_PRESENT,
         'policer_name': parser.parse_args().policer[0],
         'description': parser.parse_args().description[0]
