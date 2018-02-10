@@ -25,58 +25,24 @@ def get_vlan_dict(dev, strict=0):
         return {k: v for k, v in zip(vlans_keys, vlans_values) if k == parser.parse_args().vlan[0] }
 
 
-def get_uplinks_dict(dev):
-    ports_dict = {}
-    eths = EthPortTable(dev).get()
-    for port in eths:
-        if port.description != None and port.description.startswith('TRUNK'):
-            ports_dict[port.name] = port.description
-    return ports_dict
-
-def create_policer_config(policer_name):
-    mult = 1000000
-    if policer_name[-1] == 'k':
-        mult = 1000
-    elif policer_name[-1] == 'g':
-        mult = 1000000000
-    else:
-        return mult
-
-
-def get_port_downlink_type(dev):
-    eths = EthPortTable(dev).get()
-    for port in eths:
-        if port.name == 'ge-0/0/0':
-            return 'ge-0/0/'
-        elif port.name == 'xe-0/0/0':
-            return 'xe-0/0/'
-        else:
-            return None
-
-def get_policer(dev):
-    policer_config = dev.rpc.get_config(filter_xml=etree.XML('<configuration><firewall><policer></policer></firewall></configuration>'),
-                                        options={'source':'running'})
-    #print(etree.dump(policer_config))
-    #print(dir(policer_config))
-    #nodes = policer_config.xpath('.')
-    POLICER_PRESENT = 0
-    for node1 in policer_config:
-        for node2 in node1:
-            for node3 in node2:
-                if node3.text == 'car-' + parser.parse_args().policer[0]:
-                    print(node3.text)
-                    POLICER_PRESENT = 1
-                else:
-                    create_policer_config(parser.parse_args().policer[0])
+def create_irb_and_policer(dev):
+    policer_present = 0
+    policer_config = dev.rpc.get_config(filter_xml=etree.XML(
+        '<configuration><firewall><policer></policer></firewall></configuration>'),
+        options={'source':'running'}, normalize=True)
+    for node in policer_config.xpath(".//name"):
+        if node.text == 'car-' + parser.parse_args().policer[0]:
+            policer_present = 1
 
     ip = netaddr.IPNetwork(parser.parse_args().address[0])
 
     config_vars = {
         'vlan_id': parser.parse_args().vlan[0],
-        'ip_address': '{}/{}'.format(ip.ip.__str__() if ip.ip.__str__() != ip.network.__str__() else ip[1].__str__(),ip.prefixlen.__str__()),
-        'policer_precence': POLICER_PRESENT,
+        'ip_address': '{}/{}'.format(ip.ip.__str__() if ip.ip.__str__() != ip.network.__str__() else ip[1].__str__(),
+                                     ip.prefixlen.__str__()),
+        'policer_precence': policer_present,
         'policer_name': parser.parse_args().policer[0],
-        'description': parser.parse_args().description[0]
+        'description': parser.parse_args().descr[0]
     }
     config_file = "templates/junos-config-irb.conf"
     cu = Config(dev, mode='private')
@@ -87,17 +53,21 @@ def get_policer(dev):
 def connect_to_device():
     entered_username = input('Username: ')
     entered_password = getpass.getpass(prompt='Password: ')
-    return Device(host=parser.parse_args().dev[0], user=entered_username, password=entered_password, mode='telnet', gather_facts=False).open()
+    return Device(host=parser.parse_args().host[0], user=entered_username, password=entered_password, mode='telnet',
+                  gather_facts=False).open()
 
 
 def add_vlan_and_port(dev):
-    ports_dict = get_uplinks_dict(dev)
-    ports_list = list(ports_dict.keys())
-    all_interfaces = ports_list + ['{}{}'.format(get_port_downlink_type(dev), parser.parse_args().port[0])]
+    ports_dict = {}
+    eths = EthPortTable(dev).get()
+    for port in eths:
+        ports_dict[port.name] = port.description
+
+    uplinks = [k for k,v in ports_dict.items() if v != None and v.startswith('TRUNK')]
     config_vars = {
-        'uplinks': ports_list,
-        'client_port': ['{}{}'.format(get_port_downlink_type(dev), parser.parse_args().port[0])],
-        'interfaces': all_interfaces,
+        'uplinks': uplinks,
+        'client_port': [parser.parse_args().port[0]],
+        'interfaces': uplinks + [parser.parse_args().port[0]],
         'vlan': parser.parse_args().vlan[0],
         'trunk_bool': parser.parse_args().tag
     }
@@ -123,7 +93,7 @@ def del_vlan(dev):
     }
     config_file = "templates/junos-config-delete-vlans.conf"
     cu = Config(dev, mode='private')
-    cu.load(template_path=config_file, template_vars=config_vars, replace=True, format='set')
+    cu.load(template_path=config_file, template_vars=config_vars, replace=True, format='set', ignore_warning=True)
     cu.pdiff()
     apply_config(dev, cu)
 
@@ -136,16 +106,16 @@ def set_port_default(dev):
             continue
         else:
             for i in v[2][1]:
-                if i.rstrip('*').startswith('{}{}'.format(get_port_downlink_type(dev), parser.parse_args().port[0])):
-                    print(k)
+                if i.rstrip('*').find(parser.parse_args().port[0]):
                     vlan_numbers_list.append(k)
+
     config_vars = {
-        'interface': '{}{}'.format(get_port_downlink_type(dev), parser.parse_args().port[0]),
-        'units': vlan_numbers_list
+        'interface': parser.parse_args().port[0],
+        'units': set(vlan_numbers_list)
     }
     config_file = "templates/junos-config-port-default.conf"
     cu = Config(dev, mode='private')
-    cu.load(template_path=config_file, template_vars=config_vars, replace=True, format='set')
+    cu.load(template_path=config_file, template_vars=config_vars, replace=True, format='set', ignore_warning=True)
     cu.pdiff()
     apply_config(dev, cu)
 
@@ -170,40 +140,42 @@ def apply_config(dev, cu):
 
 
 if len(sys.argv) in [7,8]:
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--dev', '-d', nargs=1, choices=devices_list, help='This will be option One', required=True)
-    parser.add_argument('--port', '-p', nargs=1, help='This will be option One', type=int, required=True)
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--host', '-h', nargs=1, choices=devices_list, help='This will be option One', required=True)
+    parser.add_argument('--port', '-p', nargs=1, help='This will be option One', type=str, required=True)
     parser.add_argument('--vlan', '-v', nargs=1, help='This will be option One', required=True)
     parser.add_argument('--tag', '-t', action='store_const', const=1, default=0, help='This will be option One')
     parser.parse_args()
     dev = connect_to_device()
     add_vlan_and_port(dev)
 elif len(sys.argv) == 6 and sys.argv[-1] == '--del':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--dev', '-d', nargs=1, choices=devices_list, help='This will be option One', required=True)
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--host', '-h', nargs=1, choices=devices_list, help='This will be option One', required=True)
     parser.add_argument('--vlan', '-v', nargs=1, help='This will be option One', required=True)
-    parser.add_argument('--del', dest='bool_vlan', action='store_const', const=1, default=0, help='This will be option One', required=True)
+    parser.add_argument('--del', dest='bool_vlan', action='store_const', const=1, default=0,
+                        help='This will be option One', required=True)
     parser.parse_args()
     dev = connect_to_device()
     del_vlan(dev)
 elif len(sys.argv) == 6 and sys.argv[-1] == '--default':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--dev', '-d', nargs=1, choices=devices_list, help='This will be option One', required=True)
-    parser.add_argument('--port', '-p', nargs=1, help='This will be option One', type=int, required=True)
-    parser.add_argument('--default', dest='bool_vlan', action='store_const', const=1, default=0, help='This will be option One', required=True)
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--host', '-h', nargs=1, choices=devices_list, help='This will be option One', required=True)
+    parser.add_argument('--port', '-p', nargs=1, help='This will be option One', type=str, required=True)
+    parser.add_argument('--default', dest='bool_vlan', action='store_const', const=1, default=0,
+                        help='This will be option One', required=True)
     parser.parse_args()
     dev = connect_to_device()
     set_port_default(dev)
 elif sys.argv[5] == '-a':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--dev', '-d', nargs=1, choices=devices_list, help='This will be option One', required=True)
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--host', '-h', nargs=1, choices=devices_list, help='This will be option One', required=True)
     parser.add_argument('--vlan', '-v', nargs=1, help='This will be option One', required=True)
     parser.add_argument('--address', '-a', nargs=1, help='This will be option One', required=True)
     parser.add_argument('--policer', '-p', nargs=1, help='This will be option One', required=True)
-    parser.add_argument('--description', nargs=1, help='This will be option One', required=True)
+    parser.add_argument('--descr', nargs=1, help='This will be option One', required=True)
     parser.parse_args()
     dev = connect_to_device()
-    get_policer(dev)
+    create_irb_and_policer(dev)
 else:
     help_var = '''
     Usage:
