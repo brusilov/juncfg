@@ -182,7 +182,7 @@ else:
     {0} -h <host to connect> -p <port number on device> -v <vlan number to add> [-t]
     {0} -h <host to connect> -v <vlan number to del> --del
     {0} -h <host to connect> -p <port number on device> --default
-    {0) -h <host to connect> -v <vlan number to add> -a <address on irb int> -p <policer> --descr "<description>"
+    {0} -h <host to connect> -v <vlan number to add> -a <address on irb int> -p <policer> --descr "<description>"
     '''.format(sys.argv[0])
     print(help_var)
     sys.exit()
