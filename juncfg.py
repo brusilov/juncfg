@@ -179,74 +179,10 @@ elif sys.argv[5] == '-a':
 else:
     help_var = '''
     Usage:
-    {0} -d <device to connect> -p <port number on device> -v <vlan number to add> [-t]
-    {0} -d <device to connect> -v <vlan number to del> --del
-    {0} -d <device to connect> -p <port number on device> --default
+    {0} -h <host to connect> -p <port number on device> -v <vlan number to add> [-t]
+    {0} -h <host to connect> -v <vlan number to del> --del
+    {0} -h <host to connect> -p <port number on device> --default
+    {0) -h <host to connect> -v <vlan number to add> -a <address on irb int> -p <policer> --descr "<description>"
     '''.format(sys.argv[0])
     print(help_var)
     sys.exit()
-
-'''
-dev = Device(host=device, user=username, password=passwd, mode='telnet', gather_facts=False)
-json_config = dev.rpc.get_config(options={'format': 'json'})
-
-def get_vlan_list(json_config):
-    vlan_list = []
-    for obj1 in json_config['configuration']:
-        for obj2 in obj1['vlans']:
-            for obj3 in obj2['vlan']:
-                for obj4 in obj3['vlan-id']:
-                    vlan_list.append(int(obj4['data']))
-    return vlan_list
-
-def get_interfaces_uplinks(json_config):
-    interface_descr_dict = {}
-    interface_uplink_list = []
-    for obj1 in json_config['configuration']:
-        for obj2 in obj1['interfaces']:
-            for obj3 in obj2['interface']:
-                if 'description' not in obj3:
-                    continue
-                else:
-                    for obj4 in obj3['description']:
-                        #print(obj3['name']['data'], obj4['data'])
-                        interface_descr_dict[obj3['name']['data']] = obj4['data']
-    for k, v in interface_descr_dict.items():
-        if v.startswith('TRUNK'):
-            interface_uplink_list.append(k)
-    return interface_uplink_list
-======================================
-interfaces {
-{% for int in interfaces %}
-    {{ int.physical_interface }} {
-        description {{ int.description }};
-        unit 0 {
-{% if int.ip_address is defined %}
-            family inet {
-                address {{ int.ip_address }};
-        }
-{% else %}
-            family inet;
-{% endif %}
-        }
-    } {% endfor %}
-}
-
-, ignore_warning=True
-
-config_vars = {
-          'interfaces' : [
-             { 'physical_interface' : 'ge-0/0/2', 'description' : 'to_VMX02', 'ip_address' : '10.10.10.1/24' } ,
-             { 'physical_interface' : 'ge-0/0/0', 'description' : 'to_VMX03', 'ip_address' : '10.10.30.1/24' }
-           ]
-}
-outputText = template.render( config_vars )
-http://networktocode.com/labs/tutorials/automating-juniper-vmx-bgp-configuration-with-pyez/
-==========================================
-r = dev.rpc.get_interface_information(terse=True)
-
-# also you can get rid of \n from your code using normalize-space
-interface = r.xpath('physical-interface[normalize-space(name)="ge-1/1/0"]/logical-interface[normalize-space(name)="ge-1/1/0.2"]')
-address = interface[0].xpath("address-family[normalize-space(address-family-name)='inet']/interface-address/ifa-local")
-print address[0].text
-'''
