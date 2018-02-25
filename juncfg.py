@@ -1,16 +1,11 @@
 import sys
 import argparse
 import getpass
-import netaddr
-from lxml import etree
-from jnpr.junos.factory import loadyaml
-from jnpr.junos import Device
 from jnpr.junos.utils.config import Config
-from jnpr.junos.op.ethport import EthPortTable
 from jnpr.junos.op.vlan import VlanTable
+from jnpr.junos.factory import loadyaml
 
-
-devices_list = ('sw23.msk6.ip', 'sw22.msk6.ip', 'sw16.msk4.ip', '192.168.1.14')
+devices_list = ('sw1.example.local', 'sw2.example.local', 'sw3.example.local', '192.168.1.14')
 
 
 def get_vlan_dict(dev, strict=0):
@@ -22,10 +17,12 @@ def get_vlan_dict(dev, strict=0):
     if strict == 0:
         return {k: v for k, v in zip(vlans_keys, vlans_values)}
     else:
-        return {k: v for k, v in zip(vlans_keys, vlans_values) if k == parser.parse_args().vlan[0] }
+        return {k: v for k, v in zip(vlans_keys, vlans_values) if k == parser.parse_args().vlan[0]}
 
 
 def create_irb_and_policer(dev):
+    import netaddr
+    from lxml import etree
     policer_present = 0
     policer_config = dev.rpc.get_config(filter_xml=etree.XML(
         '<configuration><firewall><policer></policer></firewall></configuration>'),
@@ -50,7 +47,9 @@ def create_irb_and_policer(dev):
     cu.pdiff()
     apply_config(dev, cu)
 
+
 def connect_to_device():
+    from jnpr.junos import Device
     entered_username = input('Username: ')
     entered_password = getpass.getpass(prompt='Password: ')
     return Device(host=parser.parse_args().host[0], user=entered_username, password=entered_password, mode='telnet',
@@ -58,6 +57,7 @@ def connect_to_device():
 
 
 def add_vlan_and_port(dev):
+    from jnpr.junos.op.ethport import EthPortTable
     ports_dict = {}
     eths = EthPortTable(dev).get()
     for port in eths:
@@ -84,9 +84,10 @@ def del_vlan(dev):
     vlan_id_dict = get_vlan_dict(dev,strict=1)
     for k, v in vlan_id_dict.items():
         if v[2][1] == 'l2ng-l2rtb-vlan-member-interface':
-            break
-        for i in v[2][1]:
-            vlan_port_list.append(i.rstrip('*'))
+            continue
+        else:
+            vlan_port_list.append(v[2][1].rstrip('*'))
+
     config_vars = {
         'interfaces': vlan_port_list,
         'vlan': parser.parse_args().vlan[0]
@@ -105,9 +106,10 @@ def set_port_default(dev):
         if v[2][1] == 'l2ng-l2rtb-vlan-member-interface':
             continue
         else:
-            for i in v[2][1]:
-                if i.rstrip('*').find(parser.parse_args().port[0]):
-                    vlan_numbers_list.append(k)
+            if isinstance(v[2][1], list):
+                for i in v[2][1]:
+                    if i.rstrip('*').find(parser.parse_args().port[0]):
+                        vlan_numbers_list.append(k)
 
     config_vars = {
         'interface': parser.parse_args().port[0],
@@ -148,7 +150,7 @@ if len(sys.argv) in [7,8]:
     parser.parse_args()
     dev = connect_to_device()
     add_vlan_and_port(dev)
-elif len(sys.argv) == 6 and sys.argv[-1] == '--del':
+elif len(sys.argv) == 6 and '--del' in sys.argv[-1]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--host', '-h', nargs=1, choices=devices_list, help='This will be option One', required=True)
     parser.add_argument('--vlan', '-v', nargs=1, help='This will be option One', required=True)
@@ -157,7 +159,7 @@ elif len(sys.argv) == 6 and sys.argv[-1] == '--del':
     parser.parse_args()
     dev = connect_to_device()
     del_vlan(dev)
-elif len(sys.argv) == 6 and sys.argv[-1] == '--default':
+elif len(sys.argv) == 6 and '--default' in sys.argv[-1]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--host', '-h', nargs=1, choices=devices_list, help='This will be option One', required=True)
     parser.add_argument('--port', '-p', nargs=1, help='This will be option One', type=str, required=True)
@@ -166,7 +168,7 @@ elif len(sys.argv) == 6 and sys.argv[-1] == '--default':
     parser.parse_args()
     dev = connect_to_device()
     set_port_default(dev)
-elif sys.argv[5] == '-a':
+elif len(sys.argv) == 11 and '-a' in sys.argv[5]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--host', '-h', nargs=1, choices=devices_list, help='This will be option One', required=True)
     parser.add_argument('--vlan', '-v', nargs=1, help='This will be option One', required=True)
@@ -179,9 +181,15 @@ elif sys.argv[5] == '-a':
 else:
     help_var = '''
     Usage:
-    {0} -h <host to connect> -p <port number on device> -v <vlan number to add> [-t]
+    configure port in access mode:
+    {0} -h <host to connect> -p <port name on device> -v <vlan number to add>
+    configure port in trunk mode:
+    {0} -h <host to connect> -p <port name on device> -v <vlan number to add> -t
+    delete vlan from device:
     {0} -h <host to connect> -v <vlan number to del> --del
-    {0} -h <host to connect> -p <port number on device> --default
+    set port to default config:
+    {0} -h <host to connect> -p <port name on device> --default
+    create irb interface with ip address and policer (if not exist)
     {0} -h <host to connect> -v <vlan number to add> -a <address on irb int> -p <policer> --descr "<description>"
     '''.format(sys.argv[0])
     print(help_var)
