@@ -1,4 +1,5 @@
 Example
+pip install -r requirements.txt
 
 > python juncfg.py -h 192.168.1.14 -p xe-0/0/1 -v 301
 Username: alex
