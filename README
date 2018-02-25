@@ -1,0 +1,69 @@
+Example
+
+> python juncfg.py -h 192.168.1.14 -p xe-0/0/1 -v 301
+Username: alex
+Password:
+
+[edit interfaces]
++   xe-0/0/1 {
++       no-traps;
++       flexible-vlan-tagging;
++       native-vlan-id 301;
++       encapsulation extended-vlan-bridge;
++       ether-options {
++           ethernet-switch-profile {
++               storm-control ge-storm-control;
++               recovery-timeout 60;
++           }
++           no-flow-control;
++       }
++       unit 301 {
++           vlan-id 301;
++       }
++   }
+[edit interfaces xe-0/0/10]
++    unit 301 {
++        vlan-id 301;
++    }
+[edit interfaces xe-0/0/11]
++    unit 301 {
++        vlan-id 301;
++    }
+[edit protocols vstp]
++    vlan 301 {
++        bridge-priority 56k;
++    }
+[edit vlans]
++   vl-301 {
++       vlan-id 301;
++       interface xe-0/0/10.301;
++       interface xe-0/0/11.301;
++       interface xe-0/0/1.301;
++       switch-options {
++           interface-mac-limit {
++               2000;
++               packet-action drop-and-log;
++           }
++           mac-move-limit {
++               10;
++               packet-action drop-and-log;
++           }
++       }
++   }
+
+Config correct? [y/n] y
+Commit completed!
+
+> python juncfg.py
+
+    Usage:
+    configure port in access mode:
+    juncfg.py -h <host to connect> -p <port name on device> -v <vlan number to add>
+    configure port in trunk mode:
+    juncfg.py -h <host to connect> -p <port name on device> -v <vlan number to add> -t
+    delete vlan from device:
+    juncfg.py -h <host to connect> -v <vlan number to del> --del
+    set port to default config:
+    juncfg.py -h <host to connect> -p <port name on device> --default
+    create irb interface with ip address and policer (if not exist)
+    juncfg.py -h <host to connect> -v <vlan number to add> -a <address on irb int> -p <policer> --descr "<description>"
